@@ -11,5 +11,6 @@
     "type": "git",
     "url": "https://github.com/HarperDB/template-rate-limiting-system.git"
   },
-  "private": true
+  "private": true,
+  "license": "Apache-2.0"
 }
