@@ -1,3 +1,5 @@
+import { Resource, tables, getContext } from 'harper';
+
 /**
  * Rate Limiting System
  * Alias name: VOD Segment Access Control System
@@ -37,7 +39,7 @@ export class subscriberlog extends Resource {
      */
     async post(data) {
 
-        const context = this.getContext();
+        const context = getContext();
 
         try {
             if (!data.subscriberId) {
@@ -68,7 +70,7 @@ export class subscriberlog extends Resource {
                 // Piracy checks not taking in consideration current entry
                 this.checkPirateConditions(data.subscriberId, startTime, now-1),
                 // Write subscriber log into DB
-                databases.ratelimit.subscriber_log.put(subLog)
+                tables.subscriber_log.put(subLog)
             ]);
 
             // Set response headers based on piracy check results
@@ -95,13 +97,6 @@ export class subscriberlog extends Resource {
      * @returns {Object} Object indicating if the subscriber is a pirate and which condition was met
      */
     async checkPirateConditions(subscriberId, startTime, endTime) {
-        // Single database query to fetch all relevant logs
-        const logs = await databases.ratelimit.subscriber_log.search({
-            conditions: [
-                { attribute: 'subscriberId', comparator: 'between', value: [[subscriberId, startTime], [subscriberId, Number(endTime)]] }
-            ]
-        });
-
         // Initialize data structures for condition checking
         const requestsCount = new Map();
         const uniqueClientIPs = new Map();
@@ -109,8 +104,12 @@ export class subscriberlog extends Resource {
         const uniqueSessionIds = new Map();
         const metConditions = new Set();
 
-        // Process each log entry
-        for (const log of logs) {
+        // Single database query to fetch all relevant logs
+        for await (const log of tables.subscriber_log.search({
+            conditions: [
+                { attribute: 'subscriberId', comparator: 'between', value: [[subscriberId, startTime], [subscriberId, Number(endTime)]] }
+            ]
+        })) {
             const contentName = log.contentname;
             const clientIP = log.clientIP;
             const sessionId = log.clientsessionId;
