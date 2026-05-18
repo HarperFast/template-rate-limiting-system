@@ -5,12 +5,16 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "HARPER_INTEGRATION_TEST_INSTALL_SCRIPT=./node_modules/harper/dist/bin/harper.js harper-integration-test-run --isolation=none \"integrationTests/**/*.test.ts\""
   },
   "repository": {
     "type": "git",
     "url": "https://github.com/HarperDB/template-rate-limiting-system.git"
   },
   "private": true,
-  "license": "Apache-2.0"
+  "license": "Apache-2.0",
+  "devDependencies": {
+    "@harperfast/integration-testing": "^0.3.1",
+    "@types/node": "^22.0.0"
+  }
 }

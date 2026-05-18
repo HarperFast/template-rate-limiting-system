@@ -1,4 +1,5 @@
-import { Resource, tables, getContext } from 'harper';
+import { Resource, databases, getContext } from 'harper';
+const { subscriber_log } = databases.ratelimit;
 
 /**
  * Rate Limiting System
@@ -70,7 +71,7 @@ export class subscriberlog extends Resource {
                 // Piracy checks not taking in consideration current entry
                 this.checkPirateConditions(data.subscriberId, startTime, now-1),
                 // Write subscriber log into DB
-                tables.subscriber_log.put(subLog)
+                subscriber_log.put(subLog)
             ]);
 
             // Set response headers based on piracy check results
@@ -82,7 +83,7 @@ export class subscriberlog extends Resource {
 
             return "{'OK'}";
         } catch (error) {
-            context.responseHeaders.set('X-Data-Update:', error);
+            context.responseHeaders.set('X-Data-Update', String(error));
             throw this.createError(error, 504);
         }
     }
@@ -105,7 +106,7 @@ export class subscriberlog extends Resource {
         const metConditions = new Set();
 
         // Single database query to fetch all relevant logs
-        for await (const log of tables.subscriber_log.search({
+        for await (const log of subscriber_log.search({
             conditions: [
                 { attribute: 'subscriberId', comparator: 'between', value: [[subscriberId, startTime], [subscriberId, Number(endTime)]] }
             ]
