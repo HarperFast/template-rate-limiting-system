@@ -81,7 +81,7 @@ suite('subscriberlog POST', (ctx: ContextWithHarper) => {
       }),
     });
 
-    ok(res.status >= 400, `expected error status for missing subscriberId, got ${res.status}`);
+    strictEqual(res.status, 400, `expected 400 for missing subscriberId, got ${res.status}`);
   });
 
   test('X-subscriber-pirate is False for a single legitimate request', async () => {

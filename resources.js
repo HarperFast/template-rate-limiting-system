@@ -56,11 +56,11 @@ export class subscriberlog extends Resource {
     static async post(target, data, context) {
         data = await data;
 
-        try {
-            if (!data.subscriberId) {
-                throw createError('Deny. SubscriberId is required.', 400);
-            }
+        if (!data.subscriberId) {
+            throw createError('Deny. SubscriberId is required.', 400);
+        }
 
+        try {
             const now = Date.now();
             const startTime = now - (TIME_INTERVAL * 1000); // transform from seconds to milliseconds
 
@@ -98,7 +98,7 @@ export class subscriberlog extends Resource {
             return "{'OK'}";
         } catch (error) {
             context.responseHeaders.set('X-Data-Update', String(error));
-            throw createError(error, 504);
+            throw createError(String(error), 504);
         }
     }
 
