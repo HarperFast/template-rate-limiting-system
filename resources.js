@@ -54,6 +54,18 @@ export class subscriberlog extends Resource {
      * @returns {string} Confirmation message
      */
     static async post(target, data, context) {
+        // Harper's default create permission (super_user only) is applied by the base
+        // `Resource.post`, which is a `transactional(...)` wrapper that calls
+        // `resource.allowCreate(context.user, ...)` before running the action. Defining a
+        // static `post` here shadows that wrapper, so REST dispatches to this method
+        // directly and the default gate never runs. Without this check, anonymous callers
+        // could write to `ratelimit.subscriber_log` — poisoning the piracy detector (push a
+        // subscriberId past the thresholds to deny service to a legitimate subscriber) and
+        // giving unauthenticated clients unbounded writes.
+        if (!context?.user?.role?.permission?.super_user) {
+            throw createError('Deny. Not authorized.', 403);
+        }
+
         data = await data;
 
         if (!data.subscriberId) {
