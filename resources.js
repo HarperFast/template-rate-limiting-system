@@ -1,3 +1,6 @@
+import { Resource, databases } from 'harper';
+const { subscriber_log } = databases.ratelimit;
+
 /**
  * Rate Limiting System
  * Alias name: VOD Segment Access Control System
@@ -17,12 +20,27 @@ const CONTENT_NAMES = 4;
 // Number of unique SessionID for unique combination of subscriberID and clientIP ( Default : 1 )
 const SESSION_IDS = 1;
 
+/**
+ * Helper function to create an error with a defined status code
+ *
+ * @param {string} message - Error message
+ * @param {number} statusCode - HTTP status code
+ * @returns {Error} Error object with status code
+ */
+function createError(message, statusCode) {
+    const error = new Error(message);
+    error.statusCode = statusCode;
+    return error;
+}
+
 export class subscriberlog extends Resource {
     /**
      * Logs a new subscriber event and performs piracy checks
      * POST /subscriberlog
      *
-     * @param {Object} data - The subscriber event data
+     * @param {Object} target - Request target
+     * @param {Promise<Object>} data - The subscriber event data (Promise)
+     * @param {Object} context - Request context
      * @param {string} data.subscriberId - Subscriber ID (required)
      * @param {string} data.clientsessionId - Client Session ID
      * @param {string} data.clientIP - Client IP address
@@ -35,15 +53,26 @@ export class subscriberlog extends Resource {
      * @throws {Error} If subscriberId is missing
      * @returns {string} Confirmation message
      */
-    async post(data) {
+    static async post(target, data, context) {
+        // Harper's default create permission (super_user only) is applied by the base
+        // `Resource.post`, which is a `transactional(...)` wrapper that calls
+        // `resource.allowCreate(context.user, ...)` before running the action. Defining a
+        // static `post` here shadows that wrapper, so REST dispatches to this method
+        // directly and the default gate never runs. Without this check, anonymous callers
+        // could write to `ratelimit.subscriber_log` — poisoning the piracy detector (push a
+        // subscriberId past the thresholds to deny service to a legitimate subscriber) and
+        // giving unauthenticated clients unbounded writes.
+        if (!context?.user?.role?.permission?.super_user) {
+            throw createError('Deny. Not authorized.', 403);
+        }
 
-        const context = this.getContext();
+        data = await data;
+
+        if (!data.subscriberId) {
+            throw createError('Deny. SubscriberId is required.', 400);
+        }
 
         try {
-            if (!data.subscriberId) {
-                throw this.createError('Deny. SubscriberId is required.', 400);
-            }
-
             const now = Date.now();
             const startTime = now - (TIME_INTERVAL * 1000); // transform from seconds to milliseconds
 
@@ -66,9 +95,9 @@ export class subscriberlog extends Resource {
             // Run database put operation and piracy check concurrently
             const [pirateConditions,] = await Promise.all([
                 // Piracy checks not taking in consideration current entry
-                this.checkPirateConditions(data.subscriberId, startTime, now-1),
+                subscriberlog.checkPirateConditions(data.subscriberId, startTime, now-1),
                 // Write subscriber log into DB
-                databases.ratelimit.subscriber_log.put(subLog)
+                subscriber_log.put(subLog)
             ]);
 
             // Set response headers based on piracy check results
@@ -80,8 +109,8 @@ export class subscriberlog extends Resource {
 
             return "{'OK'}";
         } catch (error) {
-            context.responseHeaders.set('X-Data-Update:', error);
-            throw this.createError(error, 504);
+            context.responseHeaders.set('X-Data-Update', String(error));
+            throw createError(String(error), 504);
         }
     }
 
@@ -94,14 +123,7 @@ export class subscriberlog extends Resource {
      * @param {number} endTime - End time for the check window in milliseconds
      * @returns {Object} Object indicating if the subscriber is a pirate and which condition was met
      */
-    async checkPirateConditions(subscriberId, startTime, endTime) {
-        // Single database query to fetch all relevant logs
-        const logs = await databases.ratelimit.subscriber_log.search({
-            conditions: [
-                { attribute: 'subscriberId', comparator: 'between', value: [[subscriberId, startTime], [subscriberId, Number(endTime)]] }
-            ]
-        });
-
+    static async checkPirateConditions(subscriberId, startTime, endTime) {
         // Initialize data structures for condition checking
         const requestsCount = new Map();
         const uniqueClientIPs = new Map();
@@ -109,8 +131,12 @@ export class subscriberlog extends Resource {
         const uniqueSessionIds = new Map();
         const metConditions = new Set();
 
-        // Process each log entry
-        for (const log of logs) {
+        // Single database query to fetch all relevant logs
+        for await (const log of subscriber_log.search({
+            conditions: [
+                { attribute: 'subscriberId', comparator: 'between', value: [[subscriberId, startTime], [subscriberId, Number(endTime)]] }
+            ]
+        })) {
             const contentName = log.contentname;
             const clientIP = log.clientIP;
             const sessionId = log.clientsessionId;
@@ -161,16 +187,4 @@ export class subscriberlog extends Resource {
         return { isPirate: isPirate, conditionHeader: isPirate ? conditionHeader : undefined };
     }
 
-    /**
-     * Helper function to create an error with a defined status code
-     *
-     * @param {string} message - Error message
-     * @param {number} statusCode - HTTP status code
-     * @returns {Error} Error object with status code
-     */
-    createError(message, statusCode) {
-        const error = new Error(message);
-        error.statusCode = statusCode;
-        return error;
-    }
 }
